@@ -2,12 +2,13 @@ enable_testing()
 
 include(${TF_3RD_PARTY_DIR}/doctest/doctest.cmake)
 
-list(APPEND TF_UNITTESTS 
-  utility 
-  work_stealing 
-  #serializer 
+list(APPEND TF_UNITTESTS
+  utility
+  work_stealing
+
+  # serializer
   priorities
-  basics 
+  basics
   asyncs
   subflows
   control_flow
@@ -43,6 +44,4 @@ if(TF_BUILD_SYCL)
   add_subdirectory(${TF_UTEST_DIR}/sycl)
 endif()
 
-
-
-
+install(TARGETS ${TF_UNITTESTS} RUNTIME DESTINATION unittest)

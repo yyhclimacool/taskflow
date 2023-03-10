@@ -71,226 +71,218 @@ Please refer to @ref Cookbook to learn more about each task type
 and how to submit a taskflow to an executor.
 */
 class Taskflow : public FlowBuilder {
-
   friend class Topology;
   friend class Executor;
   friend class FlowBuilder;
 
   struct Dumper {
-    size_t id;
+    size_t                                           id;
     std::stack<std::pair<const Node*, const Graph*>> stack;
-    std::unordered_map<const Graph*, size_t> visited;
+    std::unordered_map<const Graph*, size_t>         visited;
   };
 
-  public:
+public:
+  /**
+  @brief constructs a taskflow with the given name
 
-    /**
-    @brief constructs a taskflow with the given name
+  @code{.cpp}
+  tf::Taskflow taskflow("My Taskflow");
+  std::cout << taskflow.name();         // "My Taskflow"
+  @endcode
+  */
+  Taskflow(const std::string& name);
 
-    @code{.cpp}
-    tf::Taskflow taskflow("My Taskflow");
-    std::cout << taskflow.name();         // "My Taskflow"
-    @endcode
-    */
-    Taskflow(const std::string& name);
+  /**
+  @brief constructs a taskflow
+  */
+  Taskflow();
 
-    /**
-    @brief constructs a taskflow
-    */
-    Taskflow();
+  /**
+  @brief constructs a taskflow from a moved taskflow
 
-    /**
-    @brief constructs a taskflow from a moved taskflow
+  Constructing a taskflow @c taskflow1 from a moved taskflow @c taskflow2 will
+  migrate the graph of @c taskflow2 to @c taskflow1.
+  After the move, @c taskflow2 will become empty.
 
-    Constructing a taskflow @c taskflow1 from a moved taskflow @c taskflow2 will
-    migrate the graph of @c taskflow2 to @c taskflow1.
-    After the move, @c taskflow2 will become empty.
+  @code{.cpp}
+  tf::Taskflow taskflow1(std::move(taskflow2));
+  assert(taskflow2.empty());
+  @endcode
 
-    @code{.cpp}
-    tf::Taskflow taskflow1(std::move(taskflow2));
-    assert(taskflow2.empty());
-    @endcode
+  Notice that @c taskflow2 should not be running in an executor
+  during the move operation, or the behavior is undefined.
+  */
+  Taskflow(Taskflow&& rhs);
 
-    Notice that @c taskflow2 should not be running in an executor
-    during the move operation, or the behavior is undefined.
-    */
-    Taskflow(Taskflow&& rhs);
+  /**
+  @brief move assignment operator
 
-    /**
-    @brief move assignment operator
+  Moving a taskflow @c taskflow2 to another taskflow @c taskflow1 will destroy
+  the existing graph of @c taskflow1 and assign it the graph of @c taskflow2.
+  After the move, @c taskflow2 will become empty.
 
-    Moving a taskflow @c taskflow2 to another taskflow @c taskflow1 will destroy
-    the existing graph of @c taskflow1 and assign it the graph of @c taskflow2.
-    After the move, @c taskflow2 will become empty.
+  @code{.cpp}
+  taskflow1 = std::move(taskflow2);
+  assert(taskflow2.empty());
+  @endcode
 
-    @code{.cpp}
-    taskflow1 = std::move(taskflow2);
-    assert(taskflow2.empty());
-    @endcode
+  Notice that both @c taskflow1 and @c taskflow2 should not be running
+  in an executor during the move operation, or the behavior is undefined.
+  */
+  Taskflow& operator=(Taskflow&& rhs);
 
-    Notice that both @c taskflow1 and @c taskflow2 should not be running
-    in an executor during the move operation, or the behavior is undefined.
-    */
-    Taskflow& operator = (Taskflow&& rhs);
+  /**
+  @brief default destructor
 
-    /**
-    @brief default destructor
+  When the destructor is called, all tasks and their associated data
+  (e.g., captured data) will be destroyed.
+  It is your responsibility to ensure all submitted execution of this
+  taskflow have completed before destroying it.
+  For instance, the following code results in undefined behavior
+  since the executor may still be running the taskflow while
+  it is destroyed after the block.
 
-    When the destructor is called, all tasks and their associated data
-    (e.g., captured data) will be destroyed.
-    It is your responsibility to ensure all submitted execution of this
-    taskflow have completed before destroying it.
-    For instance, the following code results in undefined behavior
-    since the executor may still be running the taskflow while
-    it is destroyed after the block.
+  @code{.cpp}
+  {
+    tf::Taskflow taskflow;
+    executor.run(taskflow);
+  }
+  @endcode
 
-    @code{.cpp}
-    {
-      tf::Taskflow taskflow;
-      executor.run(taskflow);
-    }
-    @endcode
+  To fix the problem, we must wait for the execution to complete
+  before destroying the taskflow.
 
-    To fix the problem, we must wait for the execution to complete
-    before destroying the taskflow.
-
-    @code{.cpp}
-    {
-      tf::Taskflow taskflow;
-      executor.run(taskflow).wait();
-    }
-    @endcode
-    */
-    ~Taskflow() = default;
-
-    /**
-    @brief dumps the taskflow to a DOT format through a std::ostream target
-
-    @code{.cpp}
-    taskflow.dump(std::cout);  // dump the graph to the standard output
-
-    std::ofstream ofs("output.dot");
-    taskflow.dump(ofs);        // dump the graph to the file output.dot
-    @endcode
-
-    For dynamically spawned tasks, such as module tasks, subflow tasks,
-    and GPU tasks, you need to run the taskflow first before you can
-    dump the entire graph.
-
-    @code{.cpp}
-    tf::Task parent = taskflow.emplace([](tf::Subflow sf){
-      sf.emplace([](){ std::cout << "child\n"; });
-    });
-    taskflow.dump(std::cout);      // this dumps only the parent tasks
+  @code{.cpp}
+  {
+    tf::Taskflow taskflow;
     executor.run(taskflow).wait();
-    taskflow.dump(std::cout);      // this dumps both parent and child tasks
-    @endcode
-    */
-    void dump(std::ostream& ostream) const;
+  }
+  @endcode
+  */
+  ~Taskflow() = default;
 
-    /**
-    @brief dumps the taskflow to a std::string of DOT format
+  /**
+  @brief dumps the taskflow to a DOT format through a std::ostream target
 
-    This method is similar to tf::Taskflow::dump(std::ostream& ostream),
-    but returning a string of the graph in DOT format.
-    */
-    std::string dump() const;
+  @code{.cpp}
+  taskflow.dump(std::cout);  // dump the graph to the standard output
 
-    /**
-    @brief queries the number of tasks
-    */
-    size_t num_tasks() const;
+  std::ofstream ofs("output.dot");
+  taskflow.dump(ofs);        // dump the graph to the file output.dot
+  @endcode
 
-    /**
-    @brief queries the emptiness of the taskflow
+  For dynamically spawned tasks, such as module tasks, subflow tasks,
+  and GPU tasks, you need to run the taskflow first before you can
+  dump the entire graph.
 
-    An empty taskflow has no tasks. That is the return of
-    tf::Taskflow::num_tasks is zero.
-    */
-    bool empty() const;
+  @code{.cpp}
+  tf::Task parent = taskflow.emplace([](tf::Subflow sf){
+    sf.emplace([](){ std::cout << "child\n"; });
+  });
+  taskflow.dump(std::cout);      // this dumps only the parent tasks
+  executor.run(taskflow).wait();
+  taskflow.dump(std::cout);      // this dumps both parent and child tasks
+  @endcode
+  */
+  void dump(std::ostream& ostream) const;
 
-    /**
-    @brief assigns a name to the taskflow
+  /**
+  @brief dumps the taskflow to a std::string of DOT format
 
-    @code{.cpp}
-    taskflow.name("assign another name");
-    @endcode
-    */
-    void name(const std::string&);
+  This method is similar to tf::Taskflow::dump(std::ostream& ostream),
+  but returning a string of the graph in DOT format.
+  */
+  std::string dump() const;
 
-    /**
-    @brief queries the name of the taskflow
+  /**
+  @brief queries the number of tasks
+  */
+  size_t num_tasks() const;
 
-    @code{.cpp}
-    std::cout << "my name is: " << taskflow.name();
-    @endcode
-    */
-    const std::string& name() const;
+  /**
+  @brief queries the emptiness of the taskflow
 
-    /**
-    @brief clears the associated task dependency graph
+  An empty taskflow has no tasks. That is the return of
+  tf::Taskflow::num_tasks is zero.
+  */
+  bool empty() const;
 
-    When you clear a taskflow, all tasks and their associated data
-    (e.g., captured data in task callables) will be destroyed.
-    The behavior of clearing a running taskflow is undefined.
-    */
-    void clear();
+  /**
+  @brief assigns a name to the taskflow
 
-    /**
-    @brief applies a visitor to each task in the taskflow
+  @code{.cpp}
+  taskflow.name("assign another name");
+  @endcode
+  */
+  void name(const std::string&);
 
-    A visitor is a callable that takes an argument of type tf::Task
-    and returns nothing. The following example iterates each task in a
-    taskflow and prints its name:
+  /**
+  @brief queries the name of the taskflow
 
-    @code{.cpp}
-    taskflow.for_each_task([](tf::Task task){
-      std::cout << task.name() << '\n';
-    });
-    @endcode
-    */
-    template <typename V>
-    void for_each_task(V&& visitor) const;
+  @code{.cpp}
+  std::cout << "my name is: " << taskflow.name();
+  @endcode
+  */
+  const std::string& name() const;
 
-    /**
-    @brief returns a reference to the underlying graph object
+  /**
+  @brief clears the associated task dependency graph
 
-    A graph object (of type tf::Graph) is the ultimate storage for the
-    task dependency graph and should only be used as an opaque
-    data structure to interact with the executor (e.g., composition).
-    */
-    Graph& graph();
+  When you clear a taskflow, all tasks and their associated data
+  (e.g., captured data in task callables) will be destroyed.
+  The behavior of clearing a running taskflow is undefined.
+  */
+  void clear();
 
-  private:
+  /**
+  @brief applies a visitor to each task in the taskflow
 
-    mutable std::mutex _mutex;
+  A visitor is a callable that takes an argument of type tf::Task
+  and returns nothing. The following example iterates each task in a
+  taskflow and prints its name:
 
-    std::string _name;
+  @code{.cpp}
+  taskflow.for_each_task([](tf::Task task){
+    std::cout << task.name() << '\n';
+  });
+  @endcode
+  */
+  template <typename V>
+  void for_each_task(V&& visitor) const;
 
-    Graph _graph;
+  /**
+  @brief returns a reference to the underlying graph object
 
-    std::queue<std::shared_ptr<Topology>> _topologies;
+  A graph object (of type tf::Graph) is the ultimate storage for the
+  task dependency graph and should only be used as an opaque
+  data structure to interact with the executor (e.g., composition).
+  */
+  Graph& graph();
 
-    std::optional<std::list<Taskflow>::iterator> _satellite;
+private:
+  mutable std::mutex _mutex;
 
-    void _dump(std::ostream&, const Graph*) const;
-    void _dump(std::ostream&, const Node*, Dumper&) const;
-    void _dump(std::ostream&, const Graph*, Dumper&) const;
+  std::string _name;
+
+  Graph _graph;
+
+  std::queue<std::shared_ptr<Topology>> _topologies;
+
+  std::optional<std::list<Taskflow>::iterator> _satellite;
+
+  void _dump(std::ostream&, const Graph*) const;
+  void _dump(std::ostream&, const Node*, Dumper&) const;
+  void _dump(std::ostream&, const Graph*, Dumper&) const;
 };
 
 // Constructor
-inline Taskflow::Taskflow(const std::string& name) :
-  FlowBuilder {_graph},
-  _name       {name} {
-}
+inline Taskflow::Taskflow(const std::string& name) : FlowBuilder{_graph}, _name{name} {}
 
 // Constructor
-inline Taskflow::Taskflow() : FlowBuilder{_graph} {
-}
+inline Taskflow::Taskflow() : FlowBuilder{_graph} {}
 
 // Move constructor
 inline Taskflow::Taskflow(Taskflow&& rhs) : FlowBuilder{_graph} {
-
   std::scoped_lock<std::mutex> lock(rhs._mutex);
 
   _name = std::move(rhs._name);
@@ -302,8 +294,8 @@ inline Taskflow::Taskflow(Taskflow&& rhs) : FlowBuilder{_graph} {
 }
 
 // Move assignment
-inline Taskflow& Taskflow::operator = (Taskflow&& rhs) {
-  if(this != &rhs) {
+inline Taskflow& Taskflow::operator=(Taskflow&& rhs) {
+  if (this != &rhs) {
     std::scoped_lock<std::mutex, std::mutex> lock(_mutex, rhs._mutex);
     _name = std::move(rhs._name);
     _graph = std::move(rhs._graph);
@@ -330,7 +322,7 @@ inline bool Taskflow::empty() const {
 }
 
 // Function: name
-inline void Taskflow::name(const std::string &name) {
+inline void Taskflow::name(const std::string& name) {
   _name = name;
 }
 
@@ -347,7 +339,7 @@ inline Graph& Taskflow::graph() {
 // Function: for_each_task
 template <typename V>
 void Taskflow::for_each_task(V&& visitor) const {
-  for(size_t i=0; i<_graph._nodes.size(); ++i) {
+  for (size_t i = 0; i < _graph._nodes.size(); ++i) {
     visitor(Task(_graph._nodes[i]));
   }
 }
@@ -368,29 +360,29 @@ inline void Taskflow::dump(std::ostream& os) const {
 
 // Procedure: _dump
 inline void Taskflow::_dump(std::ostream& os, const Graph* top) const {
-
   Dumper dumper;
 
   dumper.id = 0;
   dumper.stack.push({nullptr, top});
   dumper.visited[top] = dumper.id++;
 
-  while(!dumper.stack.empty()) {
-
+  while (!dumper.stack.empty()) {
     auto [p, f] = dumper.stack.top();
     dumper.stack.pop();
 
     os << "subgraph cluster_p" << f << " {\nlabel=\"";
 
     // n-level module
-    if(p) {
+    if (p) {
       os << 'm' << dumper.visited[f];
     }
     // top-level taskflow graph
     else {
       os << "Taskflow: ";
-      if(_name.empty()) os << 'p' << this;
-      else os << _name;
+      if (_name.empty())
+        os << 'p' << this;
+      else
+        os << _name;
     }
 
     os << "\";\n";
@@ -401,128 +393,116 @@ inline void Taskflow::_dump(std::ostream& os, const Graph* top) const {
 }
 
 // Procedure: _dump
-inline void Taskflow::_dump(
-  std::ostream& os, const Node* node, Dumper& dumper
-) const {
-
+inline void Taskflow::_dump(std::ostream& os, const Node* node, Dumper& dumper) const {
   os << 'p' << node << "[label=\"";
-  if(node->_name.empty()) os << 'p' << node;
-  else os << node->_name;
+  if (node->_name.empty())
+    os << 'p' << node;
+  else
+    os << node->_name;
   os << "\" ";
 
   // shape for node
-  switch(node->_handle.index()) {
-
+  switch (node->_handle.index()) {
     case Node::CONDITION:
     case Node::MULTI_CONDITION:
       os << "shape=diamond color=black fillcolor=aquamarine style=filled";
-    break;
+      break;
 
     case Node::RUNTIME:
       os << "shape=component";
-    break;
+      break;
 
     case Node::CUDAFLOW:
       os << " style=\"filled\""
          << " color=\"black\" fillcolor=\"purple\""
          << " fontcolor=\"white\""
          << " shape=\"folder\"";
-    break;
+      break;
 
     case Node::SYCLFLOW:
       os << " style=\"filled\""
          << " color=\"black\" fillcolor=\"red\""
          << " fontcolor=\"white\""
          << " shape=\"folder\"";
-    break;
+      break;
 
     default:
-    break;
+      break;
   }
 
   os << "];\n";
 
-  for(size_t s=0; s<node->_successors.size(); ++s) {
-    if(node->_is_conditioner()) {
+  for (size_t s = 0; s < node->_successors.size(); ++s) {
+    if (node->_is_conditioner()) {
       // case edge is dashed
-      os << 'p' << node << " -> p" << node->_successors[s]
-         << " [style=dashed label=\"" << s << "\"];\n";
+      os << 'p' << node << " -> p" << node->_successors[s] << " [style=dashed label=\"" << s << "\"];\n";
     } else {
       os << 'p' << node << " -> p" << node->_successors[s] << ";\n";
     }
   }
 
   // subflow join node
-  if(node->_parent && node->_parent->_handle.index() == Node::DYNAMIC &&
-     node->_successors.size() == 0
-    ) {
+  if (node->_parent && node->_parent->_handle.index() == Node::DYNAMIC && node->_successors.size() == 0) {
     os << 'p' << node << " -> p" << node->_parent << ";\n";
   }
 
   // node info
-  switch(node->_handle.index()) {
-
+  switch (node->_handle.index()) {
     case Node::DYNAMIC: {
       auto& sbg = std::get_if<Node::Dynamic>(&node->_handle)->subgraph;
-      if(!sbg.empty()) {
+      if (!sbg.empty()) {
         os << "subgraph cluster_p" << node << " {\nlabel=\"Subflow: ";
-        if(node->_name.empty()) os << 'p' << node;
-        else os << node->_name;
+        if (node->_name.empty())
+          os << 'p' << node;
+        else
+          os << node->_name;
 
-        os << "\";\n" << "color=blue\n";
+        os << "\";\n"
+           << "color=blue\n";
         _dump(os, &sbg, dumper);
         os << "}\n";
       }
-    }
-    break;
+    } break;
 
     case Node::CUDAFLOW: {
-      std::get_if<Node::cudaFlow>(&node->_handle)->graph->dump(
-        os, node, node->_name
-      );
-    }
-    break;
+      std::get_if<Node::cudaFlow>(&node->_handle)->graph->dump(os, node, node->_name);
+    } break;
 
     case Node::SYCLFLOW: {
-      std::get_if<Node::syclFlow>(&node->_handle)->graph->dump(
-        os, node, node->_name
-      );
-    }
-    break;
+      std::get_if<Node::syclFlow>(&node->_handle)->graph->dump(os, node, node->_name);
+    } break;
 
     default:
-    break;
+      break;
   }
 }
 
 // Procedure: _dump
-inline void Taskflow::_dump(
-  std::ostream& os, const Graph* graph, Dumper& dumper
-) const {
-
-  for(const auto& n : graph->_nodes) {
-
+inline void Taskflow::_dump(std::ostream& os, const Graph* graph, Dumper& dumper) const {
+  for (const auto& n : graph->_nodes) {
     // regular task
-    if(n->_handle.index() != Node::MODULE) {
+    if (n->_handle.index() != Node::MODULE) {
       _dump(os, n, dumper);
     }
     // module task
     else {
-      //auto module = &(std::get_if<Node::Module>(&n->_handle)->module);
+      // auto module = &(std::get_if<Node::Module>(&n->_handle)->module);
       auto module = &(std::get_if<Node::Module>(&n->_handle)->graph);
 
       os << 'p' << n << "[shape=box3d, color=blue, label=\"";
-      if(n->_name.empty()) os << 'p' << n;
-      else os << n->_name;
+      if (n->_name.empty())
+        os << 'p' << n;
+      else
+        os << n->_name;
 
-      if(dumper.visited.find(module) == dumper.visited.end()) {
+      if (dumper.visited.find(module) == dumper.visited.end()) {
         dumper.visited[module] = dumper.id++;
         dumper.stack.push({n, module});
       }
 
       os << " [m" << dumper.visited[module] << "]\"];\n";
 
-      for(const auto s : n->_successors) {
+      for (const auto s : n->_successors) {
         os << 'p' << n << "->" << 'p' << s << ";\n";
       }
     }
@@ -568,93 +548,85 @@ fu.get();
 @endcode
 */
 template <typename T>
-class Future : public std::future<T>  {
-
+class Future : public std::future<T> {
   friend class Executor;
   friend class Subflow;
 
-  using handle_t = std::variant<
-    std::monostate, std::weak_ptr<Topology>, std::weak_ptr<AsyncTopology>
-  >;
+  using handle_t = std::variant<std::monostate, std::weak_ptr<Topology>, std::weak_ptr<AsyncTopology>>;
 
   // variant index
   constexpr static auto ASYNC = get_index_v<std::weak_ptr<AsyncTopology>, handle_t>;
   constexpr static auto TASKFLOW = get_index_v<std::weak_ptr<Topology>, handle_t>;
 
-  public:
+public:
+  /**
+  @brief default constructor
+  */
+  Future() = default;
 
-    /**
-    @brief default constructor
-    */
-    Future() = default;
+  /**
+  @brief disabled copy constructor
+  */
+  Future(const Future&) = delete;
 
-    /**
-    @brief disabled copy constructor
-    */
-    Future(const Future&) = delete;
+  /**
+  @brief default move constructor
+  */
+  Future(Future&&) = default;
 
-    /**
-    @brief default move constructor
-    */
-    Future(Future&&) = default;
+  /**
+  @brief disabled copy assignment
+  */
+  Future& operator=(const Future&) = delete;
 
-    /**
-    @brief disabled copy assignment
-    */
-    Future& operator = (const Future&) = delete;
+  /**
+  @brief default move assignment
+  */
+  Future& operator=(Future&&) = default;
 
-    /**
-    @brief default move assignment
-    */
-    Future& operator = (Future&&) = default;
+  /**
+  @brief cancels the execution of the running taskflow associated with
+         this future object
 
-    /**
-    @brief cancels the execution of the running taskflow associated with
-           this future object
+  @return @c true if the execution can be cancelled or
+          @c false if the execution has already completed
 
-    @return @c true if the execution can be cancelled or
-            @c false if the execution has already completed
+  When you request a cancellation, the executor will stop scheduling
+  any tasks onwards. Tasks that are already running will continue to finish
+  (non-preemptive).
+  You can call tf::Future::wait to wait for the cancellation to complete.
+  */
+  bool cancel();
 
-    When you request a cancellation, the executor will stop scheduling
-    any tasks onwards. Tasks that are already running will continue to finish
-    (non-preemptive).
-    You can call tf::Future::wait to wait for the cancellation to complete.
-    */
-    bool cancel();
+private:
+  handle_t _handle;
 
-  private:
-
-    handle_t _handle;
-
-    template <typename P>
-    Future(std::future<T>&&, P&&);
+  template <typename P>
+  Future(std::future<T>&&, P&&);
 };
 
 template <typename T>
 template <typename P>
-Future<T>::Future(std::future<T>&& fu, P&& p) :
-  std::future<T> {std::move(fu)},
-  _handle        {std::forward<P>(p)} {
-}
+Future<T>::Future(std::future<T>&& fu, P&& p) : std::future<T>{std::move(fu)}, _handle{std::forward<P>(p)} {}
 
 // Function: cancel
 template <typename T>
 bool Future<T>::cancel() {
-  return std::visit([](auto&& arg){
-    using P = std::decay_t<decltype(arg)>;
-    if constexpr(std::is_same_v<P, std::monostate>) {
-      return false;
-    }
-    else {
-      auto ptr = arg.lock();
-      if(ptr) {
-        ptr->_is_cancelled.store(true, std::memory_order_relaxed);
-        return true;
+  return std::visit(
+    [](auto&& arg) {
+      using P = std::decay_t<decltype(arg)>;
+      if constexpr (std::is_same_v<P, std::monostate>) {
+        return false;
+      } else {
+        auto ptr = arg.lock();
+        if (ptr) {
+          ptr->_is_cancelled.store(true, std::memory_order_relaxed);
+          return true;
+        }
+        return false;
       }
-      return false;
-    }
-  }, _handle);
+    },
+    _handle);
 }
 
-
-}  // end of namespace tf. ---------------------------------------------------
+} // namespace tf
