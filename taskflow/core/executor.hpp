@@ -802,9 +802,12 @@ inline size_t Executor::num_taskflows() const {
 
 // Function: _this_worker
 inline Worker* Executor::_this_worker() {
-  printf("tfdebug: pthread_id[%ld].\n", pthread_self()->__sig);
+  DLOG(INFO) << "tfdebug: pthread_id[" << pthread_self() << "].";
+
   auto itr = _wids.find(std::this_thread::get_id());
-  printf("tfdebug: iter == end() ? %d.\n", itr == _wids.end());
+
+  DLOG(INFO) << "tfdebug: iter == end() ? " << (itr == _wids.end()) << ".";
+
   return itr == _wids.end() ? nullptr : &_workers[itr->second];
 }
 
@@ -888,7 +891,7 @@ inline void Executor::_spawn(size_t N) {
   std::condition_variable cond;
   size_t                  n = 0;
 
-  LOG(INFO) << "tfdebug: tf::Executor::_spawn(" << N << ").";
+  DLOG(INFO) << "tfdebug: tf::Executor::_spawn(" << N << ").";
 
   for (size_t id = 0; id < N; ++id) {
     _workers[id]._id = id;
@@ -905,9 +908,9 @@ inline void Executor::_spawn(size_t N) {
         {
           std::scoped_lock lock(mutex);
           _wids[std::this_thread::get_id()] = w._id;
-          LOG(INFO) << "tfdebug: pthread_id[" << std::this_thread::get_id() << "], worker_index[" << w._id << "].";
+          DLOG(INFO) << "tfdebug: pthread_id[" << std::this_thread::get_id() << "], worker_index[" << w._id << "].";
           if (n++; n == num_workers()) {
-            LOG(INFO) << "tfdebug: all workers are ready.";
+            DLOG(INFO) << "tfdebug: all workers are ready.";
             cond.notify_one();
           }
         }
@@ -1029,6 +1032,7 @@ inline void Executor::_exploit_task(Worker& w, Node*& t) {
     _invoke(w, t);
     t = w._wsq.pop();
   }
+  DLOG(INFO) << "tfdebug: exploit task none.";
 }
 
 // Function: _wait_for_task
@@ -1707,7 +1711,7 @@ tf::Future<void> Executor::run_until(Taskflow& f, P&& p, C&& c) {
     std::lock_guard<std::mutex> lock(f._mutex);
     f._topologies.push(t);
     if (f._topologies.size() == 1) {
-      printf("tfdebug: call _set_up_topology.\n");
+      DLOG(INFO) << "tfdebug: call _set_up_topology.";
       _set_up_topology(_this_worker(), t.get());
     }
   }
@@ -1758,7 +1762,7 @@ void Executor::loop_until(P&& predicate) {
 inline void Executor::_increment_topology() {
   std::lock_guard<std::mutex> lock(_topology_mutex);
   ++_num_topologies;
-  printf("tfdebug: num_topologies[%ld].\n", _num_topologies);
+  DLOG(INFO) << "tfdebug: num_topologies[" << _num_topologies << "].";
 }
 
 // Procedure: _decrement_topology_and_notify
@@ -1804,10 +1808,10 @@ inline void Executor::_set_up_topology(Worker* worker, Topology* tpg) {
   tpg->_join_counter = tpg->_sources.size();
 
   if (worker) {
-    printf("tfdebug: schedule with worker.\n");
+    DLOG(INFO) << "tfdebug: schedule with worker.";
     _schedule(*worker, tpg->_sources);
   } else {
-    printf("tfdebug: schedule without worker.\n");
+    DLOG(INFO) << "tfdebug: schedule without worker.";
     _schedule(tpg->_sources);
   }
 }
